@@ -1,6 +1,6 @@
 {
   "name": "dsh-memory-eval",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "DSH Memory RSI: offline trajectories, L1 evidence review, frozen L2 comparison and local experiment console",
   "license": "MIT",
   "repository": {
