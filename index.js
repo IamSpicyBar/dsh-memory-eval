@@ -11,7 +11,7 @@ export async function invokeMemoryEvaluation(args, { python = process.env.HMBOT_
   const argv = [fileURLToPath(new URL(l1 ? './l1.py' : './evaluate.py', import.meta.url)), action,
     ...(action === 'prepare' ? ['--config', args.config] : ['--suite', args.suite]), '--out', args.output];
   return new Promise((resolve, reject) => {
-    const child = spawn(python, argv, { signal, timeout, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(python, argv, { signal, timeout, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '', error = '';
     child.stdout.on('data', bytes => { output += bytes; if (output.length > 1024 * 1024) child.kill(); });
     child.stderr.on('data', bytes => { error = (error + bytes).slice(-4000); });

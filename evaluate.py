@@ -17,6 +17,10 @@ import sys
 import tempfile
 from urllib.parse import urlparse
 
+# The pinned backend checkout is a read-only dependency. Importing its modules
+# must not create untracked bytecode that breaks the next setup/upgrade.
+sys.dont_write_bytecode = True
+
 UPSTREAM = {"commit": "d22619858878f81a10516449ead0392805327947", "files": {
     "evallib.py": "a4a3dc7dc79d1c790b4f729ff18a38f35f6c0b364aac73afcdfeca1c8ff4fc98",
     "run_eval.py": "c12b7b9198e4dccbd2be963d80ebfdb59ee55f7ddd9c6587a8093f40cd3e6f70"}}

@@ -36,7 +36,7 @@ export async function serve(home, { port = 8878, pipeline = new MemoryPipeline(h
       }
       if (path !== '/api/bootstrap' && request.headers['x-memory-token'] !== token) return reply(response, 403, { error: '请从本机控制台发起请求' });
       if (request.method === 'GET') {
-        if (path === '/api/bootstrap') { let rt; try { rt = await pipeline.runtime(); } catch {} return reply(response, 200, { token, home, runtimeReady: Boolean(rt), runtime: rt && { dsh: rt.dsh, migloop: rt.migloop.commit }, version: '0.2.1' }); }
+        if (path === '/api/bootstrap') { let rt; try { rt = await pipeline.runtime(); } catch {} return reply(response, 200, { token, home, runtimeReady: Boolean(rt), runtime: rt && { dsh: rt.dsh, migloop: rt.migloop.commit }, version: '0.2.2' }); }
         if (path === '/api/status') return reply(response, 200, { operation, active: pipeline.active && { id: pipeline.active.id, stage: pipeline.active.stage }, connection: client && { baseUrl: client.baseUrl, credentialPersisted: false }, runs: await pipeline.list() });
         if (path === '/api/flywheel/projects') { if (!client) throw new Error('请先连接飞轮'); return reply(response, 200, await client.projects(url.searchParams.get('q') || '')); }
         if (path === '/api/flywheel/sessions') { if (!client) throw new Error('请先连接飞轮'); return reply(response, 200, await client.sessions({ project: url.searchParams.get('project') || '', q: url.searchParams.get('q') || '', offset: Number(url.searchParams.get('offset') || 0) })); }

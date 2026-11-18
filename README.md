@@ -1,4 +1,4 @@
-# Memory RSI · dsh-memory-eval 0.2.1
+# Memory RSI · dsh-memory-eval 0.2.2
 
 从真实离线轨迹或数据飞轮选择会话，使用独立 MigLoop 内核分析、制卡与归并，再做 L1/L2 评测，并将明确预览的 Memory 版本上传到私有 GitHub 仓库。本插件同时提供 DSH 工具和本地实验控制台。
 
@@ -9,8 +9,8 @@
 需要 Node.js 24.9+、Python 3.10+、Git、npm 和已登录的 GitHub CLI。macOS/Linux；Windows 请使用 WSL2。
 
     gh auth status
-    gh release download v0.2.1 --repo IamSpicyBar/dsh-memory-eval --pattern 'memory-rsi-0.2.1.tgz'
-    tar -xzf memory-rsi-0.2.1.tgz
+    gh release download v0.2.2 --repo IamSpicyBar/dsh-memory-eval --pattern 'memory-rsi-0.2.2.tgz'
+    tar -xzf memory-rsi-0.2.2.tgz
     cd package
     node bin/studio.mjs setup
     node bin/studio.mjs start
@@ -39,9 +39,9 @@ setup 自动下载固定源版本，建立独立 Python / PyYAML 6.0.3 环境，
 
 L1 自动判官的校准集构建和跨模型校准实验尚未内置；当前提供外部校准记录接口与完整人工复核路径。一次开发集改善不等于跨应用泛化。L3 agent 回放、编译与设备测试需另外配置环境，不由 L2 推断。
 
-0.2.1 的 L1 判官协议为 hmbot.memory.l1-judge/2：R1–R7 只出现在 rules，R8 只出现在 facts。判官引用冻结的 L/E/D 原文 ID，评分器核对 ID、原文、文档归属及 suite 哈希；不对模型伪造的引文做模糊匹配。官方完整检索结果仍冻结保存，发送判官的是按经验中 API 名称选择的逐字文档片段。旧协议校准记录不能用于新协议。
+0.2.2 的 L1 判官协议为 hmbot.memory.l1-judge/2：R1–R7 只出现在 rules，R8 只出现在 facts。判官引用冻结的 L/E/D 原文 ID，评分器核对 ID、原文、文档归属及 suite 哈希；不对模型伪造的引文做模糊匹配。官方完整检索结果仍冻结保存，发送判官的是按经验中 API 名称选择的逐字文档片段。旧协议校准记录不能用于新协议。
 
-真实 2048 试跑中，0.2.0 主控在派工前耗尽 30 次预算，之后由 Codex 宿主按相同公开 skills 接管独立制卡与归并；这是有宿主介入的流程，不是无人干预成功。原始失败及预算保留，没有重置调用额度。单阶段 30 次只是首轮预算，不能保证任意大小材料都能完成自动制卡。0.2.1 修正首次 L1 判官提示的结构歧义，原始无效回答不会因此转正。
+真实 2048 试跑中，0.2.0 主控在派工前耗尽 30 次预算，之后由 Codex 宿主按相同公开 skills 接管独立制卡与归并；这是有宿主介入的流程，不是无人干预成功。原始失败及预算保留，没有重置调用额度。单阶段 30 次只是首轮预算，不能保证任意大小材料都能完成自动制卡。0.2.2 修正首次 L1 判官提示的结构歧义，原始无效回答不会因此转正。
 
 ## 单独安装为 DSH 插件
 
@@ -64,3 +64,5 @@ memory_eval 参数分别为：
     python3 -m unittest discover -s tests -p 'test_*.py'
 
 测试包括跨源/Host/令牌边界、presigned 下载凭据隔离、超预算流、Memory 发布门禁、逐项 L1 与原文引用绑定。真实飞轮连接取决于用户填写的地址和权限；契约测试不能替代生产飞轮联调。
+
+0.2.2 还禁止评测进程向固定后端 checkout 写 Python 字节码，避免真实评测后再次 setup / 升级被自身生成的缓存阻断。
