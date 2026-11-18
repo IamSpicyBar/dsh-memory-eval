@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+tests/
+node_modules/
+*.tgz
+.env*

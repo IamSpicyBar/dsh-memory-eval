@@ -1,0 +1,19 @@
+{
+  "dsh": "0.2.2-rc.1",
+  "migloop": {
+    "repository": "hxy450/migloop",
+    "commit": "c72c0db50ee39ddd5dfe0fbb79ee02e6ef023925"
+  },
+  "evaluation": {
+    "repository": "fuxi-ailabs/memory-eval",
+    "commit": "d22619858878f81a10516449ead0392805327947"
+  },
+  "fixchain": {
+    "repository": "IamSpicyBar/dsh-fixchain",
+    "commit": "8389b883c24138f0577c2206a8bb271caf3251f1"
+  },
+  "viewer": {
+    "repository": "IamSpicyBar/dsh-migloop",
+    "commit": "0f68fcfb63b90dee606bf0766eadf071fa60c205"
+  }
+}

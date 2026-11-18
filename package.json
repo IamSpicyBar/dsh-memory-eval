@@ -1,0 +1,40 @@
+{
+  "name": "dsh-memory-eval",
+  "version": "0.2.0",
+  "description": "DSH Memory RSI: offline trajectories, L1 evidence review, frozen L2 comparison and local experiment console",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/IamSpicyBar/dsh-memory-eval.git"
+  },
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "evaluate.py",
+    "l1.py",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "bin",
+    "runtime",
+    "web"
+  ],
+  "bin": {
+    "memory-rsi": "bin/studio.mjs"
+  },
+  "engines": {
+    "node": ">=24.9",
+    "dsh": ">=0.2.2-rc.1 <0.3.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs && python3 -m unittest discover -s tests -p 'test_*.py'",
+    "start": "node bin/studio.mjs start",
+    "setup": "node bin/studio.mjs setup"
+  }
+}
