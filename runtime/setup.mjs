@@ -3,7 +3,7 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { run, readJson, writeJson, sha } from './common.mjs';
 
-export async function setup(home, { dshCli = process.env.HMBOT_MEMORY_DSH_CLI, sources = {}, progress = () => {} } = {}) {
+export async function setup(home, { dshCli = process.env.HMBOT_MEMORY_DSH_CLI, sources = {}, withL3 = false, progress = () => {} } = {}) {
   const lock = await readJson(new URL('./dependencies.json', import.meta.url));
   await mkdir(join(home, 'source'), { recursive: true, mode: 0o700 });
   let systemPython;
@@ -29,6 +29,13 @@ export async function setup(home, { dshCli = process.env.HMBOT_MEMORY_DSH_CLI, s
     return { directory, commit, repository: spec.repository };
   }
   const migloop = await checkout('migloop'), evaluation = await checkout('evaluation');
+  let agentReplay;
+  if (withL3) agentReplay = await checkout('agentReplay');
+  else {
+    // An ordinary setup/upgrade does not fetch or require L3, and keeps an
+    // already configured compatible local extension when it is still present.
+    try { const previous = await readJson(join(home, 'runtime.json')); if (previous.agentReplay?.commit === lock.agentReplay.commit) { await access(join(previous.agentReplay.directory, 'agent_replay/cli.py')); agentReplay = previous.agentReplay; } } catch {}
+  }
   const engine = join(home, 'engine', migloop.commit); await mkdir(engine, { recursive: true });
   const skills = join(engine, 'skills'), pyz = join(engine, 'migloop-lineage.pyz');
   try { await access(skills); } catch { progress('构建 Memory skills'); await run(python, [join(migloop.directory, 'skills/migloop-memory-maintain/scripts/build_bundle.py'), '--out', skills]); }
@@ -49,6 +56,8 @@ export async function setup(home, { dshCli = process.env.HMBOT_MEMORY_DSH_CLI, s
   for (const name of await readdir(skills)) {
     const path = join(skills, name, 'package-manifest.json'); try { fingerprint[name] = sha(await readFile(path)); } catch {}
   }
-  const state = { schemaVersion: 'hmbot.memory.runtime/1', python, dshCli, dsh: lock.dsh, migloop, evaluation, fixchain, viewer, engine, skills, pyz, packages: fingerprint, installedAt: new Date().toISOString(), pluginRoot: resolve(fileURLToPath(new URL('..', import.meta.url))) };
+  const state = { schemaVersion: 'hmbot.memory.runtime/1', python, dshCli, dsh: lock.dsh, migloop, evaluation, agentReplay, fixchain, viewer, engine, skills, pyz, packages: fingerprint, installedAt: new Date().toISOString(), pluginRoot: resolve(fileURLToPath(new URL('..', import.meta.url))) };
+  state.distillationRuntime = join(home, 'distillation-runtime.json');
+  await writeJson(state.distillationRuntime, { schemaVersion: 'hmbot.rsi.distillation-runtime/1', python, skills, migloop });
   await writeJson(join(home, 'runtime.json'), state); return state;
 }

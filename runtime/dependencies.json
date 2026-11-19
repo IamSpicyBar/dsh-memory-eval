@@ -8,9 +8,13 @@
     "repository": "fuxi-ailabs/memory-eval",
     "commit": "d22619858878f81a10516449ead0392805327947"
   },
+  "agentReplay": {
+    "repository": "fuxi-ailabs/agent-replay",
+    "commit": "39d623771d1abfb7a0c31454c49decc9cc110f48"
+  },
   "fixchain": {
     "repository": "IamSpicyBar/dsh-fixchain",
-    "commit": "8389b883c24138f0577c2206a8bb271caf3251f1"
+    "commit": "f51aa6a8392a3cf0298ca009181757007ef6d756"
   },
   "viewer": {
     "repository": "IamSpicyBar/dsh-migloop",

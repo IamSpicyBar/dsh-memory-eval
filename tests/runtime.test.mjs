@@ -9,6 +9,8 @@ import { publicationPreview } from '../runtime/github.mjs';
 import { writeJson } from '../runtime/common.mjs';
 import { request } from 'node:http';
 import { apply as budgetPlugin } from '../runtime/budget.mjs';
+import { studioFrameOrigin } from '../runtime/server.mjs';
+import { MemoryPipeline } from '../runtime/pipeline.mjs';
 
 test('shared agent request budget counts child requests before dispatch and stops at the cap', async t => {
   const root = await mkdtemp(join(tmpdir(), 'memory-budget-')); t.after(() => rm(root, { recursive: true, force: true }));
@@ -70,4 +72,34 @@ test('validated publication rejects missing or stale evaluations and unversioned
   assert.ok(candidate.files['memory/index.md']); assert.equal(candidate.mode, 'candidate');
   await writeJson(join(run, 'store/credentials.json'), { accidentally: 'secret' });
   await assert.rejects(publicationPreview(root, { repository: 'owner/repo' }), /非版本化/);
+});
+
+test('Studio framing is explicitly enabled for one origin without opening API CORS', async t => {
+  for (const origin of ['http://remote.example', 'https://user:secret@example.com', 'https://example.com/path']) assert.throws(() => studioFrameOrigin(origin));
+  const root = await mkdtemp(join(tmpdir(), 'memory-frame-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const local = await serve(root, { port: 0 }); t.after(() => local.close());
+  assert.match((await fetch(local.origin)).headers.get('content-security-policy'), /frame-ancestors 'none'/);
+  const embedded = await serve(root, { port: 0, studioOrigin: 'https://hmbotstudio.cn' }); t.after(() => embedded.close());
+  const response = await fetch(embedded.origin + '/api/bootstrap');
+  assert.match(response.headers.get('content-security-policy'), /frame-ancestors https:\/\/hmbotstudio\.cn;/);
+  assert.equal(response.headers.get('access-control-allow-origin'), null);
+  assert.equal((await response.json()).studioOrigin, 'https://hmbotstudio.cn');
+});
+
+test('unconfigured or failed L3 leaves the default workflow and publication available', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'memory-optional-')); t.after(() => rm(home, { recursive: true, force: true }));
+  const pipeline = new MemoryPipeline(home), id = '11111111-1111-4111-8111-111111111111', root = pipeline.directory(id), run = join(root, 'distillation'), revision = 'b'.repeat(64);
+  await writeJson(join(home, 'runtime.json'), {});
+  await writeFile(join(home, 'marker'), 'fixture');
+  await mkdir(join(run, 'memory'), { recursive: true }); await mkdir(join(run, 'store'));
+  await writeFile(join(run, 'memory/index.md'), 'fixture candidate'); await writeJson(join(run, 'store/HEAD.json'), { revision }); await writeJson(join(run, 'delivery-check.json'), { revision });
+  await writeJson(join(root, 'experiment.json'), { id, status: 'l2-completed', config: {}, stages: [], distillation: { run }, memory: { revision }, l1Prepared: { suiteSha256: 'l1' }, l1: { accepted: true, memoryRevision: revision, suiteSha256: 'l1' }, l2Prepared: { suiteSha256: 'l2' }, l2: { accepted: true, suiteSha256: 'l2' }, l2MemoryRevision: revision });
+  await assert.rejects(pipeline.prepareL3(id, {}), /L3 尚未配置/);
+  const report = await pipeline.get(id); assert.equal(report.status, 'l2-completed'); assert.equal(pipeline.active, null);
+  assert.equal(report.stages.at(-1).optional, true); assert.equal(report.stages.at(-1).status, 'needs-attention');
+  const published = await publicationPreview(root, { repository: 'owner/repo', mode: 'validated' });
+  assert.equal(published.summary.validationTarget, 'content'); assert.equal(published.summary.l3State, 'not-configured');
+  report.config.validationTarget = 'agent-replay'; await pipeline.save(report);
+  await assert.rejects(publicationPreview(root, { repository: 'owner/repo', mode: 'validated' }), /主动选择了 Agent/);
+  assert.equal((await publicationPreview(root, { repository: 'owner/repo', mode: 'candidate' })).mode, 'candidate');
 });

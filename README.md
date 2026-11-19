@@ -1,4 +1,8 @@
-# Memory RSI · dsh-memory-eval 0.2.2
+# Memory RSI · dsh-memory-eval 0.3.0
+
+0.3.0 将实验控制台接入 Studio 的 Memory 子平台：使用 `start --studio-origin https://hmbotstudio.cn` 明确允许该站嵌入后，在子平台点击连接。本机服务仍只监听回环地址，API 仍要求同源与令牌；父页面只接收版本就绪消息，凭据和轨迹不经过网站服务器。独立控制台也可照常使用。
+
+默认流程仍为 L1 + L2 内容验证。L3 是可选的历史 Agent 回放扩展：默认 setup 不获取 L3 依赖；未配置、未运行、待复核与失败分别记录。L3 不可用或失败不会改变主流程状态，也不阻止候选归档。只有新建实验时明确选择 agent-replay 验证目标，L3 才进入该目标的已验证发布门禁。所有上传都保留实际 validationTarget / validationScope / l3State。
 
 从真实离线轨迹或数据飞轮选择会话，使用独立 MigLoop 内核分析、制卡与归并，再做 L1/L2 评测，并将明确预览的 Memory 版本上传到私有 GitHub 仓库。本插件同时提供 DSH 工具和本地实验控制台。
 
@@ -9,11 +13,11 @@
 需要 Node.js 24.9+、Python 3.10+、Git、npm 和已登录的 GitHub CLI。macOS/Linux；Windows 请使用 WSL2。
 
     gh auth status
-    gh release download v0.2.2 --repo IamSpicyBar/dsh-memory-eval --pattern 'memory-rsi-0.2.2.tgz'
-    tar -xzf memory-rsi-0.2.2.tgz
+    gh release download v0.3.0 --repo IamSpicyBar/dsh-memory-eval --pattern 'memory-rsi-0.3.0.tgz'
+    tar -xzf memory-rsi-0.3.0.tgz
     cd package
     node bin/studio.mjs setup
-    node bin/studio.mjs start
+    node bin/studio.mjs start --studio-origin https://hmbotstudio.cn
 
 打开终端显示的本机地址，默认 http://127.0.0.1:8878。启动器只监听回环地址，不修改已有 DSH。可用 --port 8881 更换端口；HMBOT_MEMORY_HOME 指定独立状态目录。已有相同版本 DSH 可用 setup --dsh-cli /absolute/.../dsh/lib/bin.js 只读复用。
 
@@ -39,6 +43,16 @@ setup 自动下载固定源版本，建立独立 Python / PyYAML 6.0.3 环境，
 
 L1 自动判官的校准集构建和跨模型校准实验尚未内置；当前提供外部校准记录接口与完整人工复核路径。一次开发集改善不等于跨应用泛化。L3 agent 回放、编译与设备测试需另外配置环境，不由 L2 推断。
 
+## 可选 L3（实验性）
+
+按需运行 `node bin/studio.mjs setup --with-l3`，额外获取固定私有 agent-replay@39d6237；默认安装不需要该仓库权限。真正回放还需用户自己的 Claude Code、对应模型端点和独立 L3 凭据。先在默认流程完成来源、卡片、Memory 和冻结 L2，再展开可选 L3。纯转录不能补造历史工程快照。
+
+prepare 只读取录制、生成原生 first-write / dispatch 回放工程，并核验历史 agent 的 end 产物确实匹配校准失败任务，不调用模型。派生 L2 小题若不是原 Agent 的实际目标文件，会明确拒绝 L3 准备，默认流程仍可继续。run 显式执行 B0 原样、B1 阅读包入口、B2 系统追加三臂，各三次；B2 保留原 agent 定义。逐次限定轮数及超时、不自动重试、不使用 --no-guard 或 --skip-permissions；权限不足、中断或截断保留为不完整。原生写入 guard 是回放工具保护，不能替代按需配置的操作系统隔离环境。
+
+score 对真实产物复用校准文本检查，并绑定 suite / 原始 trace / 完成元数据 / 产物哈希。只要原点 B0 已能避开偏差，就记原点不稳定；模型不符或保真度未复核不接受经验效应。至少一个经验臂 2/3 避开偏差、无新增检查回退，并完成“是否读到／采用／误用”的逐次过程复核后才可能 accepted。首次重评生成 process-review-template.json，模板不预填为通过；人工填完后保存为 process-review.json，再次 score。当前没有自动的已校准过程判官。
+
+L3 是评估验证阶段可调用的一种执行方式；它与 Skill 实跑评测都可使用独立执行环境和领域检查器。当前版本提供原生 Claude Code 回放适配及离线门禁测试，未宣称完成新的真实 L3 模型试验，也未覆盖 PPT 视觉、编译、设备或留出应用泛化。默认内容验证的已验证发布仍要求 L1 + L2，摘要明确其范围。
+
 0.2.2 的 L1 判官协议为 hmbot.memory.l1-judge/2：R1–R7 只出现在 rules，R8 只出现在 facts。判官引用冻结的 L/E/D 原文 ID，评分器核对 ID、原文、文档归属及 suite 哈希；不对模型伪造的引文做模糊匹配。官方完整检索结果仍冻结保存，发送判官的是按经验中 API 名称选择的逐字文档片段。旧协议校准记录不能用于新协议。
 
 真实 2048 试跑中，0.2.0 主控在派工前耗尽 30 次预算，之后由 Codex 宿主按相同公开 skills 接管独立制卡与归并；这是有宿主介入的流程，不是无人干预成功。原始失败及预算保留，没有重置调用额度。单阶段 30 次只是首轮预算，不能保证任意大小材料都能完成自动制卡。0.2.2 修正首次 L1 判官提示的结构歧义，原始无效回答不会因此转正。
@@ -55,6 +69,9 @@ memory_eval 参数分别为：
     {"action":"l1-prepare","config":"/absolute/l1-config.json","output":"/new/l1-suite"}
     {"action":"l1-run","suite":"/absolute/l1-suite","output":"/new/l1-replies"}
     {"action":"l1-score","suite":"/absolute/l1-suite","output":"/existing/l1-replies"}
+    {"action":"l3-prepare","config":"/absolute/l3-config.json","output":"/new/l3-suite"}
+    {"action":"l3-run","suite":"/absolute/l3-suite","output":"/new/l3-replays"}
+    {"action":"l3-score","suite":"/absolute/l3-suite","output":"/existing/l3-replays"}
 
 也可直接运行 python evaluate.py prepare|run|score 或 python l1.py prepare|run|score。模型凭据使用 ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY 环境变量；DSH 制卡使用 DEEPSEEK_API_KEY。prepare 与 score 不调用模型；带 factQueries 的 L1 prepare 会读取官方公开文档。
 

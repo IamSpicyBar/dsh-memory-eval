@@ -20,6 +20,7 @@ async function refresh() {
   if (!selected && state.runs.length) selected = state.runs[0].id;
   if (selected) $('run').value = selected;
   current = state.runs.find(r => r.id === selected);
+  $('l3-status').textContent = current?.l3 ? json(current.l3) : current?.l3Prepared ? json(current.l3Prepared) : '尚未配置 L3；默认 L1/L2 流程可继续。';
   if (viewMode === 'report') $('report').textContent = json(current || state.operation || { status: '等待来源' });
   $('run-status').textContent = current?.status || '等待来源';
   document.body.classList.toggle('busy', state.operation?.status === 'running');
@@ -54,7 +55,7 @@ $('source-kind').addEventListener('change', () => { $('flywheel-picker').hidden 
 on('create', async () => {
   const source = value('source-kind') === 'flywheel' ? { kind: 'flywheel', project: value('project'), sessionId: value('session') } : { kind: value('source-kind'), path: value('source-path'), format: value('source-format'), sessions: lines('dsh-sessions') };
   const history = value('checkpoint-repo') ? { checkpointRepository: value('checkpoint-repo'), generationRef: value('generation-ref'), finalRef: value('final-ref') } : {};
-  await api('/api/runs', { title: value('title'), app: value('title'), source, baseStore: value('base-store') || undefined, authorModel: value('author-model'), requestBudget: Number(value('request-budget')), scope: value('scope'), maxIssues: 1, history });
+  await api('/api/runs', { title: value('title'), app: value('title'), source, validationTarget: value('validation-target'), baseStore: value('base-store') || undefined, authorModel: value('author-model'), requestBudget: Number(value('request-budget')), scope: value('scope'), maxIssues: 1, history });
   selected = null; notice('正在核验并冻结来源。'); await refresh();
 });
 on('credentials', async () => { const result = await api('/api/credentials', { modelKey: value('model-key'), judgeKey: value('judge-key') }); $('model-key').value = ''; $('judge-key').value = ''; notice(result.configured ? '凭据已设置，仅在本地进程内保存。' : '已清除会话凭据。'); });
@@ -64,6 +65,9 @@ on('prepare', async () => {
   await action('prepare-evaluation', body);
 });
 on('l1', () => action('l1')); on('l2', () => action('l2'));
+on('l3-prepare', () => action('l3-prepare', { recording: value('l3-recording'), agent: value('l3-agent'), taskId: value('l3-task'), at: value('l3-at'), model: value('l3-model'), baseUrl: value('l3-endpoint'), maps: JSON.parse(value('l3-maps') || '{}'), maxTurns: Number(value('l3-turns')), timeoutSeconds: 900 }));
+on('l3-credentials', async () => { await api('/api/l3-credentials', { replayKey: value('l3-key') }); $('l3-key').value = ''; notice('L3 凭据已设置，仅用于本地进程，不会复用制卡凭据。'); });
+on('l3-run', () => action('l3')); on('l3-score', () => action('l3-score'));
 on('review-packet', async () => {
   reviewPacket = await api('/api/runs/' + requireRun() + '/review-packet');
   viewMode = 'review'; $('report').textContent = json(reviewPacket);
@@ -89,6 +93,13 @@ $('run').addEventListener('change', () => { selected = value('run'); viewMode = 
 on('refresh', async () => { viewMode = 'report'; await refresh(); }, false); on('cancel', async () => { await api('/api/cancel', {}); notice('已请求停止当前阶段；已完成的证据保留。'); }, false);
 on('download-report', () => { if (!current) throw new Error('请选择实验'); const url = URL.createObjectURL(new Blob([json(current) + '\n'], { type: 'application/json' })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'memory-experiment-' + current.id + '.json'; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }, false);
 const boot = await api('/api/bootstrap'); token = boot.token; $('runtime').textContent = boot.runtimeReady ? 'DSH ' + boot.runtime.dsh + ' · 本地环境就绪' : '先运行 memory-rsi setup';
+if (boot.studioOrigin && window.parent !== window) {
+  document.body.classList.add('studio-embedded');
+  window.parent.postMessage({ type: 'hmbot.memory.ready/1', version: boot.version }, boot.studioOrigin);
+  window.addEventListener('message', event => {
+    if (event.source === window.parent && event.origin === boot.studioOrigin && event.data?.type === 'hmbot.memory.ping/1') window.parent.postMessage({ type: 'hmbot.memory.ready/1', version: boot.version }, boot.studioOrigin);
+  });
+}
 if (!boot.runtimeReady) notice('运行包尚未准备。请在解压目录运行 node bin/studio.mjs setup，然后刷新。', true);
 try { const identity = await api('/api/github'); $('repository').value = identity.login + '/memory-rsi-memories'; $('reviewer').value = identity.login; } catch {}
 await refresh();

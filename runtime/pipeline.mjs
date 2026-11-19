@@ -11,7 +11,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 export class MemoryPipeline {
   constructor(home) { this.home = home; this.active = null; this.credentials = {}; }
   async runtime() { return readJson(join(this.home, 'runtime.json')); }
-  setCredentials({ modelKey, judgeKey }) { this.credentials = { modelKey, judgeKey: judgeKey || modelKey }; return { configured: Boolean(modelKey), persisted: false }; }
+  setCredentials({ modelKey, judgeKey }) { this.credentials = { ...this.credentials, modelKey, judgeKey: judgeKey || modelKey }; return { configured: Boolean(modelKey), persisted: false }; }
+  setReplayCredential({ replayKey }) { this.credentials.replayKey = replayKey; return { configured: Boolean(replayKey), persisted: false }; }
   async list() {
     let entries; try { const { readdir } = await import('node:fs/promises'); entries = await readdir(join(this.home, 'runs')); } catch { return []; }
     const results = [];
@@ -24,6 +25,8 @@ export class MemoryPipeline {
   async create(config, client) {
     if (this.active) throw new Error('请等待当前阶段结束');
     if (!config.title?.trim()) throw new Error('请输入实验名称');
+    if (config.validationTarget && !['content', 'agent-replay'].includes(config.validationTarget)) throw new Error('未知验证目标');
+    config = { ...config, validationTarget: config.validationTarget || 'content' };
     // Secrets are accepted only by setCredentials / the connection object.
     if (/"(?:token|password|apiKey|modelKey|judgeKey)"\s*:/i.test(JSON.stringify(config))) throw new Error('实验配置不能包含凭据');
     const rt = await this.runtime(), id = randomUUID(), root = this.directory(id);
@@ -54,18 +57,18 @@ export class MemoryPipeline {
       const prepareConfig = join(root, 'distill-input.json');
       await writeJson(prepareConfig, { materials, format, app: config.app || config.title, serverSessionId: config.source.sessionId, baseStore: config.baseStore || undefined, sessions: config.source.sessions || [], scope: config.scope || '', maxIssues: config.maxIssues || 1, ...config.history });
       const { prepareOffline } = await import(pathToFileURL(join(rt.fixchain.directory, 'lib/offline.js')));
-      const prepared = await prepareOffline(prepareConfig, join(root, 'distillation'), { runtime: join(this.home, 'runtime.json'), signal: abort.signal });
+      const prepared = await prepareOffline(prepareConfig, join(root, 'distillation'), { runtime: rt.distillationRuntime || join(this.home, 'runtime.json'), signal: abort.signal });
       report.distillation = { run: prepared.prepared, initialRevision: prepared.start_revision }; report.status = 'source-ready';
       report.stages.push({ stage: 'source', status: 'completed', at: new Date().toISOString() }); await this.save(report); return report;
     } catch (error) { report.status = abort.signal.aborted ? 'cancelled' : 'failed'; report.error = safeError(error); await this.save(report); throw error; }
     finally { this.active = null; }
   }
-  async stage(id, name, action) {
+  async stage(id, name, action, { optional = false } = {}) {
     if (this.active) throw new Error('当前已有阶段运行');
     const report = await this.get(id), abort = new AbortController();
-    this.active = { id, stage: name, abort }; report.status = name + '-running'; await this.save(report);
-    try { const value = await action(report, await this.runtime(), abort.signal); report.stages.push({ stage: name, status: 'completed', at: new Date().toISOString() }); report.status = name + '-completed'; report.error = undefined; await this.save(report); return value; }
-    catch (error) { report.status = abort.signal.aborted ? 'cancelled' : 'needs-attention'; report.error = safeError(error); report.stages.push({ stage: name, status: report.status, at: new Date().toISOString() }); await this.save(report); throw error; }
+    this.active = { id, stage: name, abort }; if (!optional) report.status = name + '-running'; await this.save(report);
+    try { const value = await action(report, await this.runtime(), abort.signal); report.stages.push({ stage: name, optional, status: 'completed', at: new Date().toISOString() }); if (!optional) { report.status = name + '-completed'; report.error = undefined; } await this.save(report); return value; }
+    catch (error) { const status = abort.signal.aborted ? 'cancelled' : 'needs-attention'; if (!optional) { report.status = status; report.error = safeError(error); } report.stages.push({ stage: name, optional, status, error: safeError(error), at: new Date().toISOString() }); await this.save(report); throw error; }
     finally { this.active = null; }
   }
   async worker(report, rt, directory, prompt, label, signal) {
@@ -94,14 +97,14 @@ export class MemoryPipeline {
       const directory = report.distillation.run;
       await this.worker(report, rt, directory, 'Read CLAUDE.md and job.json. Follow the exact session-to-memory skill; use independent subagents for cards. Deliver the versioned memory reading pack to memory/index.md and completion.json. Do not author evaluation tasks in this stage.', 'distill-worker', signal);
       const { checkOffline } = await import(pathToFileURL(join(rt.fixchain.directory, 'lib/offline.js')));
-      const delivery = await checkOffline(directory, { runtime: join(this.home, 'runtime.json'), signal });
+      const delivery = await checkOffline(directory, { runtime: rt.distillationRuntime || join(this.home, 'runtime.json'), signal });
       report.memory = { revision: delivery.revision, path: dirname(delivery.index) }; return delivery;
     });
   }
   async checkDelivery(id) {
     return this.stage(id, 'delivery-check', async (report, rt) => {
       const { checkOffline } = await import(pathToFileURL(join(rt.fixchain.directory, 'lib/offline.js')));
-      const delivery = await checkOffline(report.distillation.run, { runtime: join(this.home, 'runtime.json') });
+      const delivery = await checkOffline(report.distillation.run, { runtime: rt.distillationRuntime || join(this.home, 'runtime.json') });
       report.memory = { revision: delivery.revision, path: dirname(delivery.index) }; return delivery;
     });
   }
@@ -173,6 +176,28 @@ export class MemoryPipeline {
       report[level] = JSON.parse(result.stdout); return report[level];
     });
   }
+  async prepareL3(id, options) {
+    return this.stage(id, 'l3-prepare', async (report, rt) => {
+      if (!report.memory || !report.l2Prepared || report.l2MemoryRevision !== report.memory.revision) throw new Error('先冻结本 revision 的 L2 校准题集');
+      if (report.l3Prepared) throw new Error('L3 已冻结；改变录制或模型请新建实验');
+      if (!rt.agentReplay) throw new Error('L3 尚未配置，可按需运行 setup --with-l3；现有 L1/L2 和候选归档仍可继续');
+      if (Object.keys(options).some(key => !['recording', 'agent', 'taskId', 'at', 'model', 'baseUrl', 'maps', 'thinkingAsText', 'maxTurns', 'timeoutSeconds'].includes(key))) throw new Error('L3 配置包含未支持字段；凭据仅通过单独入口设置');
+      const root = this.directory(id), config = { ...options, l2Suite: join(root, 'l2-suite'), memoryRevision: report.memory.revision, agentReplay: rt.agentReplay };
+      await writeJson(join(root, 'l3-config.json'), config);
+      report.l3Prepared = await invokeMemoryEvaluation({ action: 'l3-prepare', config: join(root, 'l3-config.json'), output: join(root, 'l3-suite') }, { python: rt.python });
+      report.l3MemoryRevision = report.memory.revision; return report.l3Prepared;
+    }, { optional: true });
+  }
+  async evaluateL3(id, { scoreOnly = false } = {}) {
+    return this.stage(id, scoreOnly ? 'l3-score' : 'l3', async (report, rt, signal) => {
+      if (!report.l3Prepared || report.l3MemoryRevision !== report.memory.revision) throw new Error('先冻结本 revision 的 L3 输入');
+      const root = this.directory(id);
+      const env = { ANTHROPIC_AUTH_TOKEN: this.credentials.replayKey || process.env.ANTHROPIC_AUTH_TOKEN || '', PYTHONDONTWRITEBYTECODE: '1' };
+      if (!scoreOnly && !env.ANTHROPIC_AUTH_TOKEN) throw new Error('请为 L3 显式设置该端点的模型凭据；不会自动转发制卡凭据');
+      const result = await run(rt.python, [join(here, '../l3.py'), scoreOnly ? 'score' : 'run', '--suite', join(root, 'l3-suite'), '--out', join(root, 'l3-replays')], { env, signal, processGroup: true, timeout: 16200000 });
+      report.l3 = JSON.parse(result.stdout); return report.l3;
+    }, { optional: true });
+  }
   async reviewL1(id, { suiteSha256, reviewer, reason, decisions }) {
     const report = await this.get(id), root = this.directory(id);
     if (this.active || !report.l1Prepared || report.l1Prepared.suiteSha256 !== suiteSha256 || !reviewer?.trim() || !reason?.trim()) throw new Error('需要已冻结的 L1 材料、复核人和理由');
@@ -193,7 +218,7 @@ export class MemoryPipeline {
     if (this.active) throw new Error('请等待当前阶段结束');
     const report = await this.get(id), rt = await this.runtime();
     const { checkOffline } = await import(pathToFileURL(join(rt.fixchain.directory, 'lib/offline.js')));
-    await checkOffline(report.distillation.run, { runtime: join(this.home, 'runtime.json') });
+    await checkOffline(report.distillation.run, { runtime: rt.distillationRuntime || join(this.home, 'runtime.json') });
     return publicationPreview(this.directory(id), options);
   }
   async publish(id, options) { await this.previewPublication(id, options); const result = await publishMemory(this.directory(id), options); const report = await this.get(id); report.publication = result; await this.save(report); return result; }
