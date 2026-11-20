@@ -1,7 +1,7 @@
 {
   "name": "dsh-memory-eval",
-  "version": "0.3.0",
-  "description": "DSH Memory RSI: offline trajectories, L1 evidence review, frozen L2 comparison and local experiment console",
+  "version": "0.4.0",
+  "description": "Self-contained Memory L1/L2 validation and optional core-executor L3 verification",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -12,17 +12,19 @@
   "files": [
     "index.js",
     "evaluate.py",
+    "backend.py",
+    "model_client.py",
+    "memory_format.py",
     "l1.py",
     "l3.py",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",
-    "bin",
-    "runtime",
-    "web"
+    "bin/eval.mjs",
+    "capabilities.json"
   ],
   "bin": {
-    "memory-rsi": "bin/studio.mjs"
+    "memory-eval": "bin/eval.mjs"
   },
   "engines": {
     "node": ">=24.9",
@@ -34,8 +36,6 @@
     }
   },
   "scripts": {
-    "test": "node --test tests/*.test.mjs && python3 -m unittest discover -s tests -p 'test_*.py'",
-    "start": "node bin/studio.mjs start",
-    "setup": "node bin/studio.mjs setup"
+    "test": "node --test tests/*.test.mjs && python3 -m unittest discover -s tests -p 'test_*.py'"
   }
 }

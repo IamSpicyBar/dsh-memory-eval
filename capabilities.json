@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "hmbot.rsi.evaluator-capabilities/1",
+  "status": "experimental",
+  "role": "evaluation",
+  "assets": ["memory"],
+  "memoryFormats": [{"id": "migloop-memory/1", "caseSchema": "migloop-case/4", "access": "read-only"}],
+  "levels": {
+    "L1": {"taskExecution": "none", "modelJudging": true, "humanReview": true},
+    "L2": {"taskExecution": "none", "modelContentComparison": true, "optional": true},
+    "L3": {"taskExecution": ["task-rerun", "historical-replay"], "provider": "rsi-core", "optional": true, "harnesses": ["dsh", "claude-code"]}
+  },
+  "taskContract": {"modelVisible": ["task", "declared inputs", "arm-specific assets"], "graderOnly": ["checks", "correct references"], "independentOfL2": true},
+  "modelTransport": {"preferred": "host-service", "standalone": "explicit credential and bounded runner"},
+  "sourceRepositoryAccessRequired": false,
+  "acceptance": "Execution, check results, relative improvement and process review are separate; incomplete evidence cannot promote Memory"
+}

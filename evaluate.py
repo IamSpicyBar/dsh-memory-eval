@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
-"""Frozen L2 Memory A/B adapter for fuxi-ailabs/memory-eval.
-
-Uses upstream prompt construction, file extraction and checks. This is content
-transfer evaluation, not autonomous recall, compilation or device acceptance.
-"""
+"""Self-contained frozen Memory content comparison; no source-repo imports."""
 import argparse
 import hashlib
-import importlib
 import json
 import math
 import os
@@ -16,14 +11,13 @@ import shutil
 import sys
 import tempfile
 from urllib.parse import urlparse
+import backend as builtin_backend
 
-# The pinned backend checkout is a read-only dependency. Importing its modules
-# must not create untracked bytecode that breaks the next setup/upgrade.
 sys.dont_write_bytecode = True
 
-UPSTREAM = {"commit": "d22619858878f81a10516449ead0392805327947", "files": {
-    "evallib.py": "a4a3dc7dc79d1c790b4f729ff18a38f35f6c0b364aac73afcdfeca1c8ff4fc98",
-    "run_eval.py": "c12b7b9198e4dccbd2be963d80ebfdb59ee55f7ddd9c6587a8093f40cd3e6f70"}}
+BACKEND = {"id": builtin_backend.VERSION, "files": {
+    name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
+    for name in ["backend.py", "model_client.py", "memory_format.py", "evaluate.py", "l1.py", "l3.py"]}}
 
 
 def sha(value):
@@ -42,13 +36,8 @@ def write(path, value):
     os.replace(tmp, path)
 
 
-def upstream(path):
-    root = Path(path).resolve() / "l2" / "tools"
-    for name, expected in UPSTREAM["files"].items():
-        if sha((root / name).read_bytes()) != expected:
-            raise ValueError("upstream memory-eval digest mismatch: " + name)
-    sys.path.insert(0, str(root))
-    return importlib.import_module("run_eval"), importlib.import_module("evallib")
+def backend():
+    return builtin_backend, builtin_backend
 
 
 def manifest(root):
@@ -90,7 +79,7 @@ def prepare(config_path, output):
     c, output = read(config_path), Path(output).resolve()
     if output.exists():
         raise ValueError("prepare output must be a new directory")
-    runner, lib = upstream(c["upstream"])
+    runner, lib = backend()
     tasks_root, project = Path(c["tasks"]).resolve(), Path(c["project"]).resolve()
     tasks, ids = [], set()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -159,8 +148,8 @@ def prepare(config_path, output):
             raise ValueError("invalid temperature")
         if c.get("maxRequests") is not None and (type(c["maxRequests"]) is not int or c["maxRequests"] < 1 or len(tasks) * settings["runs"] * 2 > c["maxRequests"]):
             raise ValueError("L2 task/runs count exceeds this experiment's request budget")
-        suite = {"schemaVersion": "hmbot.rsi.memory-eval/1", "upstream": UPSTREAM,
-                 "upstreamPath": str(Path(c["upstream"]).resolve()), "settings": settings, "tasks": tasks,
+        suite = {"schemaVersion": "hmbot.rsi.memory-eval/2", "backend": BACKEND,
+                 "settings": settings, "tasks": tasks,
                  "baseline": "memory" if c.get("baselineMemory") else "no-memory", "scope": "L2 content transfer; development set"}
         write(tmp / "suite.json", suite)
         write(tmp / "frozen.json", manifest(tmp))
@@ -181,7 +170,9 @@ def load_suite(directory):
         if (root / sub).exists() and set(manifest(root / sub)) != {p[len(sub) + 1:] for p in frozen if p.startswith(sub + "/")}:
             raise ValueError("frozen evaluation files added or removed")
     suite = read(root / "suite.json")
-    runner, lib = upstream(suite["upstreamPath"])
+    if suite.get("schemaVersion") != "hmbot.rsi.memory-eval/2" or suite.get("backend") != BACKEND:
+        raise ValueError("Legacy or changed evaluation backend; keep old results read-only and freeze a new suite")
+    runner, lib = backend()
     return root, suite, runner, lib
 
 

@@ -5,19 +5,18 @@ No step edits a lesson, retries a model call, or silently accepts missing facts.
 """
 import argparse
 import hashlib
-import importlib.util
 import json
 import os
 from pathlib import Path
 import re
 import shutil
 import tempfile
-import subprocess
 import sys
 import urllib.request
 from urllib.parse import urlparse
 
-from evaluate import read, write, sha, manifest, upstream
+from evaluate import read, write, sha, manifest, backend, BACKEND
+import memory_format
 
 RULES = {
     "R1": "Every mechanism and action follows from the cited case claims or frozen authoritative documentation, without broadening conditions.",
@@ -121,16 +120,9 @@ def _prepare(config, output):
     c, output = read(config), Path(output).resolve()
     if output.exists():
         raise ValueError("L1 output must be new")
-    rt = read(c["runtime"])
-    scripts = Path(rt["skills"]) / "migloop-memory-maintain/scripts"
     store = Path(c["store"]).resolve()
     def snapshot(revision=None):
-        if revision:
-            sys.path.insert(0, str(scripts / "_runtime"))
-            from memorylib.registry import Memory
-            return Memory(store).current(revision)
-        args = [sys.executable, str(scripts / "memory.py"), "snapshot", "--store", str(store), "--full"]
-        return json.loads(subprocess.check_output(args, text=True))
+        return memory_format.snapshot(store, revision)
     state = snapshot()
     base = snapshot(c["baseRevision"]) if c.get("baseRevision") else {"lessons": {}}
     if not c.get("authorModel") or not c.get("judgeModel") or c["judgeModel"] == c["authorModel"]:
@@ -139,10 +131,7 @@ def _prepare(config, output):
         raise ValueError("L1 uses exactly three independent samples")
     output.mkdir(parents=True)
     lint_file = output / "lint.json"
-    lint_args = [sys.executable, str(scripts / "lint.py"), "--store", str(store), "--base", c.get("baseRevision") or state["revision"], "--json", str(lint_file)]
-    if not c.get("baseRevision"):
-        lint_args.append("--all")
-    subprocess.run(lint_args, check=True, capture_output=True)
+    write(lint_file, memory_format.lint(store, state, base))
     items = []
     for identity, lesson in state["lessons"].items():
         if lesson.get("status") != "active" or base["lessons"].get(identity) == lesson:
@@ -151,16 +140,8 @@ def _prepare(config, output):
         for binding in lesson.get("evidence", []):
             if not re.fullmatch(r"case-[a-f0-9]+", binding.get("case", "")) or not re.fullmatch(r"[a-f0-9]{64}", binding.get("revision", "")):
                 raise ValueError("Invalid evidence identity")
-            card = read(store / "cases" / binding["case"] / (binding["revision"] + ".json"))
-            core = Path(rt["skills"]) / "migloop-memory-maintain/scripts/_runtime"
-            sys.path.insert(0, str(core))
-            from memorylib.registry import validate_case
-            from memorylib.card_contract import require_valid_card
-            from memorylib.case_format import claims
-            validate_case(card); require_valid_card(card)
-            claim = claims(card).get(binding["claim"])
-            if not claim:
-                raise ValueError("Missing bound claim")
+            card = memory_format.card(store, binding["case"], binding["revision"])
+            claim = memory_format.claim(card, binding["claim"])
             evidence.append({"binding": binding, "claim": claim, "title": card.get("title"), "environment": card.get("metadata", {}).get("environment", [])})
         if not evidence:
             raise ValueError("Active lesson has no evidence")
@@ -186,7 +167,7 @@ def _prepare(config, output):
         raise ValueError("Judge endpoint must be HTTPS")
     lint_result = read(lint_file)
     lint_summary = lint_result.get("summary", lint_result)
-    suite = {"schemaVersion": "hmbot.memory.l1-suite/1", "protocol": PROTOCOL, "rulesSha256": sha(json.dumps(RULES, sort_keys=True).encode()), "memoryRevision": state["revision"], "baseRevision": c.get("baseRevision"), "upstream": c["upstream"], "settings": settings, "lint": lint_summary, "lintHits": lint_result.get("hits", []), "items": items, "facts": docset, "calibration": c.get("calibration")}
+    suite = {"schemaVersion": "hmbot.memory.l1-suite/2", "protocol": PROTOCOL, "rulesSha256": sha(json.dumps(RULES, sort_keys=True).encode()), "memoryRevision": state["revision"], "baseRevision": c.get("baseRevision"), "backend": BACKEND, "settings": settings, "lint": lint_summary, "lintHits": lint_result.get("hits", []), "items": items, "facts": docset, "calibration": c.get("calibration")}
     suite["quoteCatalogs"] = {item["id"]: quote_catalog(item, docset) for item in items}
     write(output / "suite.json", suite)
     for item in items:
@@ -283,7 +264,9 @@ def run(directory, output):
     if output.exists() or output.is_relative_to(root) or root.is_relative_to(output):
         raise ValueError("L1 replies require a new separate directory")
     output.mkdir(parents=True)
-    runner, _ = upstream(suite["upstream"])
+    if suite.get("backend") != BACKEND:
+        raise ValueError("Freeze a new L1 suite for the built-in backend; old reports remain read-only")
+    runner, _ = backend()
     for item in suite["items"]:
         body = (root / (item["id"] + ".prompt.txt")).read_text(encoding="utf-8")
         for n in range(3):
@@ -326,7 +309,7 @@ def score(directory, output):
     calibrated = calibration.get("protocol") == PROTOCOL and calibration.get("judgeModel") == suite["settings"]["judgeModel"] and calibration.get("rulesSha256") == suite["rulesSha256"] and all(calibration.get("agreement", {}).get(rule, 0) >= 0.85 for rule in BLOCKING) and calibration.get("humanLabelsSha256")
     lint_summary = suite["lint"].get("summary", suite["lint"])
     accepted = not incomplete and not review and not lint_summary.get("lessons_with_open_hits", 1) and bool(calibrated)
-    report = {"schemaVersion": "hmbot.memory.l1-result/1", "memoryRevision": suite["memoryRevision"], "suiteSha256": sha((root / "suite.json").read_bytes()), "M0": lint_summary, "complete": not incomplete, "judgeCalibrated": bool(calibrated), "needsReview": review or not calibrated, "accepted": accepted, "verdict": "pass" if accepted else "inconclusive" if incomplete else "needs-review", "rows": rows}
+    report = {"schemaVersion": "hmbot.memory.l1-result/1", "memoryRevision": suite["memoryRevision"], "suiteSha256": sha((root / "suite.json").read_bytes()), "M0": lint_summary, "mechanicalScope": "snapshot/card hashes, structure, evidence and dependencies; not generator semantic lint", "complete": not incomplete, "judgeCalibrated": bool(calibrated), "needsReview": review or not calibrated, "accepted": accepted, "verdict": "pass" if accepted else "inconclusive" if incomplete else "needs-review", "rows": rows}
     write(output / "report.json", report)
     return {k: v for k, v in report.items() if k != "rows"}
 

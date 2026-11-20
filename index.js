@@ -25,7 +25,7 @@ export async function invokeMemoryEvaluation(args, { python = process.env.HMBOT_
 
 export function apply(ctx, config = {}) {
   const dispose = ctx.get('tools').register({ name: 'memory_eval',
-    description: 'Memory 评测：默认 L1 来源/语义/事实复核及 L2 内容传递；可选 l3-prepare/run/score 对历史 Agent 原生回放，需单独环境。L3 未配置或失败不影响默认 L1/L2 流程。prepare/score 不调用模型；run 使用显式预算，缺项/截断不可冒充通过，不自动发布 Memory。',
+    description: '独立 Memory 验证：L1 来源/语义/事实复核，可选 L2 内容比较；L3 调用 RSI 主心骨执行器进行任务重跑或历史回放，无需 L2 题集或外部评测仓。任务/输入和判据分别冻结。L3 缺项不阻塞候选归档；prepare/score 不调用模型，run 受显式预算限制，不自动重试或发布。',
     parameters: { type: 'object', properties: { action: { enum: ['prepare', 'run', 'score', 'l1-prepare', 'l1-run', 'l1-score', 'l3-prepare', 'l3-run', 'l3-score'] }, config: { type: 'string' }, suite: { type: 'string' }, output: { type: 'string' } }, required: ['action', 'output'], additionalProperties: false },
     output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
     execute: (args, exec) => invokeMemoryEvaluation(args, { python: config.python, signal: exec?.signal }),
